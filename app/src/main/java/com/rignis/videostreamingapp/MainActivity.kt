@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,10 +18,16 @@ import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.FileDescriptorOutputOptions
+import androidx.camera.video.OutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
 import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
+import androidx.core.content.PermissionChecker
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.withResumed
@@ -146,6 +153,63 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun recordAndSaveVideo(outputStream: ParcelFileDescriptor) {
+        recording = videoCapture!!.output.prepareRecording(
+            this,
+            FileDescriptorOutputOptions.Builder(outputStream).build()
+        ).apply {
+            if (PermissionChecker.checkSelfPermission(
+                    this@MainActivity,
+                    Manifest.permission.RECORD_AUDIO
+                ) == PermissionChecker.PERMISSION_GRANTED
+            ) {
+                withAudioEnabled()
+            }
+        }.start(ContextCompat.getMainExecutor(this@MainActivity)) { recordEvent ->
+            when (recordEvent) {
+                is VideoRecordEvent.Resume -> {
+
+                }
+
+                is VideoRecordEvent.Status -> {
+
+                }
+
+                is VideoRecordEvent.Pause -> {
+
+                }
+
+                is VideoRecordEvent.Start -> {
+                    viewBinding.videoCaptureButton.apply {
+                        text = getString(R.string.stop_capture)
+                        isEnabled = true
+                    }
+                }
+
+                is VideoRecordEvent.Finalize -> {
+                    if (!recordEvent.hasError()) {
+                        val msg = "Video capture succeeded: " +
+                                "${recordEvent.outputResults.outputUri}"
+                        Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT)
+                            .show()
+                        Log.d(TAG, msg)
+                    } else {
+                        recording?.close()
+                        recording = null
+                        Log.e(
+                            TAG, "Video capture ends with error: " +
+                                    "${recordEvent.error}"
+                        )
+                    }
+                    viewBinding.videoCaptureButton.apply {
+                        text = getString(R.string.start_capture)
+                        isEnabled = true
+                    }
+                }
+            }
+        }
+    }
+
 
     private fun onCapturePhotoClick() {
         lifecycleScope.launch {
@@ -167,6 +231,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun captureVideo() {
+        val videoCapture = this.videoCapture ?: return
+        viewBinding.videoCaptureButton.isEnabled = false
+        recording?.let {
+            it.stop()
+            recording = null
+            return
+        }
+        lifecycleScope.launch {
+            val selectedDir = viewModel.getUserSelectedDir()
+            if (selectedDir.isNullOrEmpty()) {
+                selectFolder()
+            } else {
+                val doc = DocumentFile.fromTreeUri(this@MainActivity, Uri.parse(selectedDir))
+                val file = doc?.createFile("video/mp4", "${createFileName()}.mp4")
+                val writeStream = contentResolver.openFileDescriptor(file?.uri!!, "w")
+                recordAndSaveVideo(writeStream!!)
+            }
+        }
 
     }
 
@@ -185,6 +267,11 @@ class MainActivity : AppCompatActivity() {
                 }
             imageCapture = ImageCapture.Builder().build()
 
+            val recorder = Recorder.Builder()
+                .setQualitySelector(QualitySelector.from(Quality.HIGHEST))
+                .build()
+            videoCapture = VideoCapture.withOutput(recorder)
+
             // Select back camera as a default
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
@@ -194,7 +281,7 @@ class MainActivity : AppCompatActivity() {
 
                 // Bind use cases to camera
                 cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview, imageCapture
+                    this, cameraSelector, preview, imageCapture, videoCapture
                 )
 
             } catch (exc: Exception) {
