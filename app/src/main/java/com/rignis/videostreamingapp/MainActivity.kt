@@ -19,7 +19,6 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileDescriptorOutputOptions
-import androidx.camera.video.OutputOptions
 import androidx.camera.video.Quality
 import androidx.camera.video.QualitySelector
 import androidx.camera.video.Recorder
@@ -153,8 +152,11 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun recordAndSaveVideo(outputStream: ParcelFileDescriptor) {
-        recording = videoCapture!!.output.prepareRecording(
+    private fun recordAndSaveVideo(
+        videoCapture: VideoCapture<Recorder>,
+        outputStream: ParcelFileDescriptor
+    ) {
+        recording = videoCapture.output.prepareRecording(
             this,
             FileDescriptorOutputOptions.Builder(outputStream).build()
         ).apply {
@@ -246,7 +248,7 @@ class MainActivity : AppCompatActivity() {
                 val doc = DocumentFile.fromTreeUri(this@MainActivity, Uri.parse(selectedDir))
                 val file = doc?.createFile("video/mp4", "${createFileName()}.mp4")
                 val writeStream = contentResolver.openFileDescriptor(file?.uri!!, "w")
-                recordAndSaveVideo(writeStream!!)
+                recordAndSaveVideo(videoCapture, writeStream!!)
             }
         }
 
