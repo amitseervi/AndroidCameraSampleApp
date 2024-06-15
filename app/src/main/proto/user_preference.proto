@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+option java_package = "com.rignis.videostreamingapp.proto";
+option java_multiple_files = true;
+
+message UserPreference{
+  string camera_storage_dir = 1;
+}

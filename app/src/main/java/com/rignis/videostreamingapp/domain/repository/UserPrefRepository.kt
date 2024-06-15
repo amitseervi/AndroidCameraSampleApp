@@ -1,8 +1,9 @@
 package com.rignis.videostreamingapp.domain.repository
 
-import com.rignis.videostreamingapp.domain.model.UserPersistentState
+import com.rignis.videostreamingapp.domain.model.UserPreference
+import kotlinx.coroutines.flow.Flow
 
 interface UserPrefRepository {
-    suspend fun saveUserState(state: UserPersistentState)
-    suspend fun getUserState(): UserPersistentState
+    val userState: Flow<UserPreference>
+    suspend fun updateCameraStorageDir(dir: String?)
 }

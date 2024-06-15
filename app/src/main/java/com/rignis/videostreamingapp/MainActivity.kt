@@ -1,14 +1,12 @@
 package com.rignis.videostreamingapp
 
 import android.Manifest
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,14 +23,14 @@ import androidx.camera.video.VideoCapture
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.withResumed
 import com.rignis.videostreamingapp.databinding.ActivityMainBinding
-import com.rignis.videostreamingapp.ui.CameraCommand
 import com.rignis.videostreamingapp.ui.MainViewModel
-import com.rignis.videostreamingapp.ui.UiEvent
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.concurrent.ExecutorService
@@ -74,42 +72,23 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val activityResultFolderSelectListener = registerForActivityResult(
+    private val activityResultFolderSelectLauncher = registerForActivityResult(
         object : ActivityResultContracts.OpenDocumentTree() {
             override fun createIntent(context: Context, input: Uri?): Intent {
                 val result = super.createIntent(context, input)
                 result.flags =
-                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 return result
             }
         }
     ) { uri: Uri? ->
-        uri?.let {
-            val documentFileTree = DocumentFile.fromTreeUri(this@MainActivity, it)
-            val file = documentFileTree?.createFile(
-                "application/json",
-                "test-${System.currentTimeMillis()}.json"
+        if (uri != null) {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
-            file?.let { f ->
-                val writeStream = contentResolver.openOutputStream(f.uri)
-                lifecycleScope.launch(Dispatchers.IO) {
-                    writeStream?.write(
-                        """
-                    {
-                      "user": "Amit Chaudhary",
-                      "name": "Amit",
-                      "age": 53,
-                      "gender": "M"
-                    }
-                """.trimIndent().toByteArray()
-                    )
-                    writeStream?.close()
-                }
-            }
-//            viewModel.onStorageFolderSelected(it)
+            viewModel.onStorageFolderSelected(uri.toString())
         }
-
-
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -125,56 +104,29 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Set up the listeners for take photo and video capture buttons
-        viewBinding.imageCaptureButton.setOnClickListener { takePhoto() }
+        viewBinding.imageCaptureButton.setOnClickListener { onCapturePhotoClick() }
         viewBinding.videoCaptureButton.setOnClickListener { captureVideo() }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
         observeViewModel()
     }
 
-    private fun createFileName(extension: String): String {
+    private fun createFileName(): String {
         val df = SimpleDateFormat.getInstance()
-        return "${df.format(Date())}.${extension}"
+        return df.format(Date())
     }
 
     private fun observeViewModel() {
         lifecycleScope.launch {
-            viewModel.viewEvent.collectLatest { event ->
-                when (event) {
-                    UiEvent.REQUEST_STORAGE_FOLDER -> {
-                        selectFolder()
-                    }
-
-                    UiEvent.START_VIDEO_RECORDING_AND_SAVE -> {
-
-                    }
-
-                    UiEvent.START_IMAGE_CAPTURE_AND_SAVE -> {
-                        val documentFolderTree = DocumentFile.fromTreeUri(
-                            this@MainActivity,
-                            Uri.parse(viewModel.state.value.selectedFolderPath)
-                        )
-
-                        val fileName = createFileName(".jpeg")
-                        val file = documentFolderTree?.createFile("image/jpeg", fileName)
-                        captureAndSaveImage(fileName, file!!.uri)
-                    }
-                }
+            viewModel.state.collectLatest {
+                Log.i("amittest", "New state = $it")
             }
         }
     }
 
-    private fun captureAndSaveImage(name: String, uri: Uri) {
-        val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, name)
-            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
-        }
+    private fun captureAndSaveImage(outputStream: OutputStream) {
         val outputOptions = ImageCapture.OutputFileOptions
-            .Builder(
-                contentResolver,
-                uri,
-                contentValues
-            )
+            .Builder(outputStream)
             .build()
         imageCapture?.takePicture(
             outputOptions,
@@ -195,12 +147,27 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-    private fun takePhoto() {
-        viewModel.startExecutingCommand(CameraCommand.CAPTURE)
+    private fun onCapturePhotoClick() {
+        lifecycleScope.launch {
+            val job = launch(start = CoroutineStart.LAZY) {
+                val selectedDir = viewModel.getUserSelectedDir()
+                if (selectedDir.isNullOrEmpty()) {
+                    selectFolder()
+                } else {
+                    val doc = DocumentFile.fromTreeUri(this@MainActivity, Uri.parse(selectedDir))
+                    val file = doc?.createFile("image/jpeg", "${createFileName()}.jpeg")
+                    val writeStream = contentResolver.openOutputStream(file?.uri!!)
+                    captureAndSaveImage(writeStream!!)
+                }
+            }
+            withResumed {
+                job.start()
+            }
+        }
     }
 
     private fun captureVideo() {
-        viewModel.startExecutingCommand(CameraCommand.RECORD)
+
     }
 
     private fun startCamera() {
@@ -243,7 +210,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectFolder() {
-        activityResultFolderSelectListener.launch(null)
+        activityResultFolderSelectLauncher.launch(null)
     }
 
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {

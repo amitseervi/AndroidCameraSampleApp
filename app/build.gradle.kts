@@ -1,7 +1,11 @@
+import com.google.protobuf.gradle.proto
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
     id("com.google.dagger.hilt.android")
+    id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.protobuf")
     id("kotlin-kapt")
 }
 
@@ -38,10 +42,30 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+//    sourceSets {
+//        this["main"].proto {
+//            setSrcDirs(listOf("src/main/proto"))
+//        }
+//    }
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:4.27.1"
+    }
+    generateProtoTasks {
+        all().forEach { task ->
+            task.builtins {
+                create("java") {
+                    option("lite")
+                }
+            }
+        }
+    }
 }
 
 dependencies {
-
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
@@ -63,10 +87,14 @@ dependencies {
 
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.hilt.navigation.compose)
-    val hilt = "2.51.1"
-    implementation("com.google.dagger:hilt-android:$hilt")
-    kapt("com.google.dagger:hilt-android-compiler:$hilt")
+    implementation(libs.hilt.android)
+    kapt(libs.hilt.android.compiler)
     // https://mvnrepository.com/artifact/com.google.code.gson/gson
-    implementation("com.google.code.gson:gson:2.11.0")
+    implementation(libs.gson)
+    // https://mvnrepository.com/artifact/androidx.datastore/datastore
+    implementation(libs.androidx.datastore)
+    // https://mvnrepository.com/artifact/com.google.protobuf/protobuf-kotlin-lite
+    implementation(libs.protobuf.kotlin.lite)
+    implementation(libs.protobuf.java.lite)
 
 }
