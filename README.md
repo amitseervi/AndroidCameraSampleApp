@@ -1,3 +1,1 @@
 # VideoRecordingApp
-# AndroidCameraSampleApp
-# AndroidCameraSampleApp
